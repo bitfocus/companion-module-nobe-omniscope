@@ -12,5 +12,6 @@
 	],
 	"manufacturer": "Nobe",
 	"product": "Omniscope",
-	"shortname": "NobeScope"
+	"shortname": "NobeScope",
+	"author": "theColourSpace"
 }
