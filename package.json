@@ -13,5 +13,14 @@
 	"manufacturer": "Nobe",
 	"product": "Omniscope",
 	"shortname": "NobeScope",
-	"author": "theColourSpace"
+	"author": "theColourSpace",
+	"homepage": "https://github.com/bitfocus/companion-module-nobe-omniscope#readme",
+	"bugs": {
+		"url": "https://github.com/bitfocus/companion-module-nobe-omniscope/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bitfocus/companion-module-nobe-omniscope.git"
+	},
+	"api_version": "1.0.0"
 }
