@@ -2,12 +2,19 @@ var instance_skel = require('../../instance_skel')
 var WebSocket = require('ws')
 var debug
 var log
+var DEFAULT_PORT = 4475
+var RECONNECT_INITIAL_MS = 1000
+var RECONNECT_MAX_MS = 10000
 
 function instance(system, id, config) {
 	var self = this
 
 	// super-constructor
 	instance_skel.apply(this, arguments)
+	self.socket = undefined
+	self.reconnectTimer = undefined
+	self.reconnectDelayMs = RECONNECT_INITIAL_MS
+	self.destroying = false
 	self.actions() // export actions
 	return self
 }
@@ -18,32 +25,140 @@ instance.prototype.init = function () {
 	debug = self.debug
 	log = self.log
 
+	self.destroying = false
+	self.reconnectDelayMs = RECONNECT_INITIAL_MS
 	self.status(self.STATUS_UNKNOWN)
 
-	if (self.config.host !== undefined) {
+	if (self.getHost() !== '') {
 		self.initSocket()
+	}
+}
+
+instance.prototype.getHost = function () {
+	var self = this
+	if (!self.config || typeof self.config.host !== 'string') {
+		return ''
+	}
+	return self.config.host.trim()
+}
+
+instance.prototype.getPort = function () {
+	var self = this
+	var port
+
+	if (!self.config) {
+		return DEFAULT_PORT
+	}
+
+	port = parseInt(self.config.port, 10)
+	if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+		return DEFAULT_PORT
+	}
+
+	return port
+}
+
+instance.prototype.stopReconnectTimer = function () {
+	var self = this
+	if (self.reconnectTimer !== undefined) {
+		clearTimeout(self.reconnectTimer)
+		self.reconnectTimer = undefined
+	}
+}
+
+instance.prototype.scheduleReconnect = function () {
+	var self = this
+	var delay
+
+	if (self.destroying || self.getHost() === '') {
+		return
+	}
+
+	if (self.reconnectTimer !== undefined) {
+		return
+	}
+
+	delay = self.reconnectDelayMs
+	self.status(self.STATUS_WARNING, 'Reconnecting in ' + delay + 'ms...')
+	self.reconnectTimer = setTimeout(function () {
+		self.reconnectTimer = undefined
+		self.initSocket()
+	}, delay)
+	self.reconnectDelayMs = Math.min(delay * 2, RECONNECT_MAX_MS)
+}
+
+instance.prototype.destroySocket = function () {
+	var self = this
+	var socket = self.socket
+
+	if (socket === undefined) {
+		return
+	}
+
+	self.socket = undefined
+	socket.removeAllListeners('open')
+	socket.removeAllListeners('close')
+	socket.removeAllListeners('error')
+
+	try {
+		socket.close()
+	} catch (error) {
+		// Ignore close errors while replacing sockets.
 	}
 }
 
 instance.prototype.initSocket = function () {
 	var self = this
+	var host
+	var port
+	var socket
+	var url
 
+	host = self.getHost()
+	if (self.destroying || host === '') {
+		return
+	}
+	port = self.getPort()
+
+	self.stopReconnectTimer()
+	self.destroySocket()
 	self.status(self.STATUS_WARNING, 'Connecting to socket')
-	self.socket = new WebSocket('ws://' + self.config.host + ':4475/')
+	url = 'ws://' + host + ':' + port + '/'
+	socket = new WebSocket(url, { handshakeTimeout: 5000 })
+	self.socket = socket
 
-	self.socket
-		.on('open', () => {
-			console.log('Connection has been established.')
+	socket
+		.on('open', function () {
+			if (socket !== self.socket) {
+				return
+			}
+			self.reconnectDelayMs = RECONNECT_INITIAL_MS
 			self.status(self.STATUS_OK)
+			self.log('info', 'Nobe: connection established to ' + host + ':' + port)
 		})
-		.on('close', () => {
-			console.log('Connection closed')
+		.on('close', function () {
+			if (socket !== self.socket) {
+				return
+			}
+
+			self.socket = undefined
+			if (self.destroying) {
+				return
+			}
+
 			self.status(self.STATUS_WARNING, 'Connection closed')
+			self.scheduleReconnect()
 		})
-		.on('error', (err) => {
-			console.log('Error:', err)
+		.on('error', function (err) {
+			var message
+			if (socket !== self.socket) {
+				return
+			}
+
+			message = err && err.message ? err.message : String(err)
 			self.status(self.STATUS_ERROR, 'Connection error')
-			self.log('error', 'Nobe: ' + err)
+			self.log('error', 'Nobe: ' + host + ':' + port + ': ' + message)
+			self.scheduleReconnect()
 		})
 }
 
@@ -52,16 +167,21 @@ instance.prototype.updateConfig = function (config) {
 	self.config = config
 
 	self.status(self.STATUS_WARNING, 'Update Config')
+	self.reconnectDelayMs = RECONNECT_INITIAL_MS
+	self.stopReconnectTimer()
+	self.destroySocket()
 
-	if (self.socket !== undefined) {
-		self.socket.close()
-	}
-
-	self.config = config
-	if (self.config.host) {
+	if (self.getHost() !== '') {
 		self.status(this.STATUS_WARNING, 'Connecting...')
 		self.initSocket()
 	}
+}
+
+instance.prototype.destroy = function () {
+	var self = this
+	self.destroying = true
+	self.stopReconnectTimer()
+	self.destroySocket()
 }
 
 // Return config fields for web config
@@ -80,8 +200,15 @@ instance.prototype.config_fields = function () {
 			id: 'host',
 			label: 'Target IP',
 			width: 6,
-			default: '192.168.0.100',
+			default: '127.0.0.1',
 			regex: self.REGEX_IP,
+		},
+		{
+			type: 'textinput',
+			id: 'port',
+			label: 'Target Port',
+			width: 6,
+			default: String(DEFAULT_PORT),
 		},
 	]
 }
@@ -143,16 +270,29 @@ instance.prototype.actions = function (system) {
 
 instance.prototype.action = function (action) {
 	var self = this
-	var id = action.action
+	var channel
 	var opt = action.options
 	var cmd
 
-	cmd = '{"action":' + opt.channels + ', "event": "testEvent"}'
+	channel = parseInt(opt.channels, 10)
+	if (!Number.isFinite(channel) || channel < 0 || channel > 31) {
+		self.log('error', 'Nobe: invalid channel value: ' + String(opt.channels))
+		return
+	}
+
+	cmd = JSON.stringify({ action: channel, event: 'testEvent' })
 
 	if (cmd !== undefined) {
-		if (self.socket !== undefined) {
+		if (self.socket !== undefined && self.socket.readyState === WebSocket.OPEN) {
 			debug('sending ', cmd, 'to', self.config.host)
-			self.socket.send(cmd)
+			try {
+				self.socket.send(cmd)
+			} catch (error) {
+				self.log('error', 'Nobe: failed to send command: ' + error.message)
+			}
+		} else {
+			self.log('warn', 'Nobe: command ignored because socket is not connected')
+			self.scheduleReconnect()
 		}
 	}
 }
