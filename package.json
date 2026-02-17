@@ -1,6 +1,6 @@
 {
 	"name": "companion-module-nobe-omniscope",
-	"version": "1.0.3",
+	"version": "2.0.0",
 	"description": "Nobe Omniscope Trigger for Companion",
 	"main": "main.js",
 	"scripts": {
