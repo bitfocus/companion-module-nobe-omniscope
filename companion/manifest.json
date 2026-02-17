@@ -1,0 +1,30 @@
+{
+	"id": "nobe-omniscope",
+	"name": "nobe-omniscope",
+	"shortname": "NobeScope",
+	"description": "Nobe Omniscope Trigger for Companion",
+	"version": "1.0.3",
+	"license": "MIT",
+	"repository": "https://github.com/bitfocus/companion-module-nobe-omniscope",
+	"bugs": "https://github.com/bitfocus/companion-module-nobe-omniscope/issues",
+	"maintainers": [
+		{
+			"name": "Time in Pixels",
+			"email": "contact@timeinpixels.com"
+		}
+	],
+	"legacyIds": [],
+	"runtime": {
+		"type": "node18",
+		"api": "nodejs-ipc",
+		"apiVersion": "1.13.0",
+		"entrypoint": "../main.js"
+	},
+	"manufacturer": "Nobe",
+	"products": [
+		"Omniscope"
+	],
+	"keywords": [
+		"Video"
+	]
+}

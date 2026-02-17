@@ -1,6 +1,18 @@
-Node Omniscope Control
-Module for use with Nobe Omniscope, software video scopes. Actions are defined in the software, this triggers actions 1-32.
+## Nobe Omniscope Control
 
-Available commands
+Trigger OmniScope channels from Companion over websocket.
 
-Trigger Channel (1-32)
+### Configuration
+
+- `Target IP`: host running OmniScope
+- `Target Port`: websocket port (`4475` by default)
+
+### Action
+
+- `Trigger Channel (1-32)`
+
+### Notes
+
+- The module sends payloads in the OmniScope format:
+  - `{"event":"testEvent","action":<0-31>}`
+- Connection automatically retries after OmniScope restarts or temporary disconnects.
